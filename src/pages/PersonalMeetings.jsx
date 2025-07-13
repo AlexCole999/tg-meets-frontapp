@@ -1,8 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const PersonalMeetings = () => {
+  const [fetchedMeetings, setFetchedMeetings] = useState([]);
   const [genderFilter, setGenderFilter] = useState('');
   const [ageFilter, setAgeFilter] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newMeeting, setNewMeeting] = useState({
+    location: '',
+    gender: 'any',
+    minAge: '',
+    maxAge: '',
+    minWeight: '',
+    maxWeight: '',
+    date: '',
+    time: '',
+  });
+  const [statusMessage, setStatusMessage] = useState('');
 
   const [meetings, setMeetings] = useState([
     {
@@ -21,11 +34,61 @@ const PersonalMeetings = () => {
     },
   ]);
 
+  const fetchMeetings = async () => {
+    try {
+      const res = await fetch('https://dating-in-tg.com/single/all');
+      const data = await res.json();
+      setFetchedMeetings(data);
+    } catch (err) {
+      console.error('❌ Ошибка загрузки встреч:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchMeetings();
+  }, []);
+
+  const handleCreate = async () => {
+    const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    if (!telegramId) return alert('Нет Telegram ID');
+
+    const fullDate = new Date(`${newMeeting.date}T${newMeeting.time}`);
+
+    try {
+      const res = await fetch('https://dating-in-tg.com/single/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telegramId,
+          time: fullDate,
+          location: newMeeting.location,
+          gender: newMeeting.gender,
+          minAge: newMeeting.minAge,
+          maxAge: newMeeting.maxAge,
+          minWeight: newMeeting.minWeight,
+          maxWeight: newMeeting.maxWeight,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setStatusMessage('✅ Встреча добавлена');
+        setShowCreateModal(false);
+        fetchMeetings();
+      } else {
+        setStatusMessage(data || '❌ Ошибка создания');
+      }
+    } catch (e) {
+      setStatusMessage('❌ Ошибка сети');
+    }
+  };
+
   return (
     <div style={styles.container}>
       <h2 style={styles.heading}>Личные встречи</h2>
 
-      <button style={styles.createButton}>+ Создать встречу</button>
+      <button style={styles.createButton} onClick={() => setShowCreateModal(true)}>
+        + Создать встречу
+      </button>
 
       <div style={styles.filters}>
         <select
@@ -68,6 +131,87 @@ const PersonalMeetings = () => {
           <button style={styles.joinButton}>Участвовать</button>
         </div>
       ))}
+
+      {fetchedMeetings.map((meet) => (
+        <div key={meet._id} style={styles.card}>
+          <div style={styles.cardHeader}>
+            <div>
+              <div style={styles.whenWhere}>
+                <strong>{new Date(meet.time).toLocaleString()}</strong>
+              </div>
+              <div style={styles.location}>{meet.location}</div>
+            </div>
+          </div>
+          <div style={styles.requirements}>
+            <strong>Кого ищут:</strong>{' '}
+            {(meet.gender === 'any' ? 'Любой пол' : meet.gender === 'male' ? 'Парни' : 'Девушки') +
+              (meet.minAge || meet.maxAge ? `, ${meet.minAge || '?'}–${meet.maxAge || '?'}` : '')}
+          </div>
+          <button style={styles.joinButton}>Участвовать</button>
+        </div>
+      ))}
+
+      {showCreateModal && (
+        <div style={styles.modal}>
+          <h3>Создать встречу</h3>
+          <input
+            type="date"
+            value={newMeeting.date}
+            onChange={(e) => setNewMeeting({ ...newMeeting, date: e.target.value })}
+            style={styles.input}
+          />
+          <input
+            type="time"
+            value={newMeeting.time}
+            onChange={(e) => setNewMeeting({ ...newMeeting, time: e.target.value })}
+            style={styles.input}
+          />
+          <input
+            placeholder="Локация"
+            value={newMeeting.location}
+            onChange={(e) => setNewMeeting({ ...newMeeting, location: e.target.value })}
+            style={styles.input}
+          />
+          <select
+            value={newMeeting.gender}
+            onChange={(e) => setNewMeeting({ ...newMeeting, gender: e.target.value })}
+            style={styles.input}
+          >
+            <option value="any">Любой пол</option>
+            <option value="male">Парни</option>
+            <option value="female">Девушки</option>
+          </select>
+          <input
+            placeholder="Мин. возраст"
+            value={newMeeting.minAge}
+            onChange={(e) => setNewMeeting({ ...newMeeting, minAge: e.target.value })}
+            style={styles.input}
+          />
+          <input
+            placeholder="Макс. возраст"
+            value={newMeeting.maxAge}
+            onChange={(e) => setNewMeeting({ ...newMeeting, maxAge: e.target.value })}
+            style={styles.input}
+          />
+          <input
+            placeholder="Мин. вес"
+            value={newMeeting.minWeight}
+            onChange={(e) => setNewMeeting({ ...newMeeting, minWeight: e.target.value })}
+            style={styles.input}
+          />
+          <input
+            placeholder="Макс. вес"
+            value={newMeeting.maxWeight}
+            onChange={(e) => setNewMeeting({ ...newMeeting, maxWeight: e.target.value })}
+            style={styles.input}
+          />
+          <button onClick={handleCreate} style={styles.joinButton}>Создать</button>
+          <button onClick={() => setShowCreateModal(false)} style={{ ...styles.joinButton, backgroundColor: '#ccc' }}>
+            Отмена
+          </button>
+          <p>{statusMessage}</p>
+        </div>
+      )}
     </div>
   );
 };
@@ -159,6 +303,26 @@ const styles = {
     border: 'none',
     borderRadius: 8,
     fontSize: 15,
+    marginTop: 8,
+  },
+  modal: {
+    position: 'fixed',
+    top: '10%',
+    left: '5%',
+    right: '5%',
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 12,
+    boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+    zIndex: 1000,
+  },
+  input: {
+    width: '100%',
+    padding: 10,
+    fontSize: 14,
+    marginBottom: 10,
+    borderRadius: 8,
+    border: '1px solid #ccc',
   },
 };
 
