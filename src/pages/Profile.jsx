@@ -4,6 +4,8 @@ const Profile = () => {
   const [showRequests, setShowRequests] = useState(false);
   const [showMeetings, setShowMeetings] = useState(false);
 
+  const [myGroupMeetings, setMyGroupMeetings] = useState([]);
+
   const [statusMessage, setStatusMessage] = useState('none');
 
   const [showEdit, setShowEdit] = useState(false);
@@ -38,56 +40,112 @@ const Profile = () => {
     },
   ];
 
-  const myMeetings = [
-    {
-      id: 1,
-      type: '1-на-1',
-      info: 'Сегодня, 18:00 — Мята, с Алина (25)',
-      avatar: 'https://randomuser.me/api/portraits/women/81.jpg',
-    },
-    {
-      id: 2,
-      type: 'Группа',
-      info: 'Завтра, 14:00 — Коворкинг “WorkSpace”',
-      avatar: 'https://randomuser.me/api/portraits/men/73.jpg',
-    },
-  ];
+  const [myMeetings, setMyMeetings] = useState([]);
 
   useEffect(() => {
     const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
     if (!telegramId) return;
 
-    const fetchProfile = async () => {
+    const fetchAll = async () => {
       try {
-        const res = await fetch('https://dating-in-tg.com/auth', {
+        // 1. Загружаем профиль
+        const profileRes = await fetch('https://dating-in-tg.com/auth', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ telegramId }),
         });
 
-        if (res.ok) {
-          const data = await res.json();
-
-          if (data.user) {
-            setProfile(data.user); // 💾 загрузка профиля в стейт
-          }
-
-          if (data.status === 'добавлен') {
-            setStatusMessage('🆕 Пользователь добавлен');
-          } else {
-            setStatusMessage('📂 Пользователь загружен');
-          }
-        } else {
+        if (!profileRes.ok) {
           setStatusMessage('❌ Ошибка загрузки профиля');
+          return;
         }
+
+        const profileData = await profileRes.json();
+        setProfile(profileData.user);
+        setStatusMessage(profileData.status === 'добавлен' ? '🆕 Пользователь добавлен' : '📂 Пользователь загружен');
+
+        // 2. Загружаем встречи, созданные пользователем
+        const meetingsRes = await fetch('https://dating-in-tg.com/single/mine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ telegramId }),
+        });
+
+        const meetingsData = await meetingsRes.json();
+        setMyMeetings(meetingsData.meetings || []);
+
+        // 3. Загружаем групповые встречи, созданные пользователем
+        const groupMeetingsRes = await fetch('https://dating-in-tg.com/many/mine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ telegramId }),
+        });
+        const groupMeetingsData = await groupMeetingsRes.json();
+        setMyGroupMeetings(groupMeetingsData.meetings || []);
       } catch (err) {
+        console.error('❌ Ошибка сети:', err);
         setStatusMessage('⚠️ Ошибка сети');
       }
     };
 
-    fetchProfile();
+    fetchAll();
   }, []);
 
+  const handleAcceptCandidate = async (meetId, telegramId) => {
+    const res = await fetch('https://dating-in-tg.com/single/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ meetId, telegramId }),
+    });
+    const data = await res.json();
+
+    if (data.status === '✅ Принят') {
+      setMyMeetings((prev) =>
+        prev.map((m) =>
+          m._id === meetId
+            ? {
+              ...m,
+              candidateProfiles: m.candidateProfiles.map((c) =>
+                c.telegramId === telegramId
+                  ? { ...c, status: 'accepted' }
+                  : { ...c, status: 'rejected' }
+              ),
+            }
+            : m
+        )
+      );
+    } else {
+      alert(data.error || 'Ошибка при принятии');
+    }
+  };
+
+  const handleRejectCandidate = async (meetId, telegramId) => {
+    const res = await fetch('https://dating-in-tg.com/single/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ meetId, telegramId }),
+    });
+    const data = await res.json();
+
+    if (data.status === '✅ Отклонён') {
+      setMyMeetings((prev) =>
+        prev.map((m) =>
+          m._id === meetId
+            ? {
+              ...m,
+              candidateProfiles: m.candidateProfiles.map((c) =>
+                c.telegramId === telegramId
+                  ? { ...c, status: 'rejected' }
+                  : c
+              ),
+            }
+            : m
+        )
+      );
+    } else {
+      alert(data.error || 'Ошибка при отклонении');
+    }
+  };
 
   return (
     <div style={styles.container}>
@@ -99,6 +157,7 @@ const Profile = () => {
             {statusMessage}
           </div>
         )}
+        <ProfileLine label="Имя" value={profile?.name ? profile?.name : '-'} />
         <ProfileLine label="Пол" value={profile?.gender ? profile?.gender : '-'} />
         <ProfileLine label="Возраст" value={`${profile?.age ? profile?.age : '-'}`} />
         <ProfileLine label="Рост" value={`${profile?.height ? profile?.height : '-'} см`} />
@@ -106,7 +165,7 @@ const Profile = () => {
         <ProfileLine label="Город" value={`${profile?.city ? profile?.city : '-'}`} />
         <ProfileLine label="Tg ID" value={tginit} />
 
-        <button
+        {/* <button
           onClick={async () => {
             const userId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
             const message = `👋 Привет! У тебя новая встреча в TG Meets.${userId}`
@@ -117,7 +176,7 @@ const Profile = () => {
               body: JSON.stringify({ userId: 6820478433, message }),
             });
           }}
-          style={styles.editBtn}>ТЕСТ</button>
+          style={styles.editBtn}>ТЕСТ</button> */}
         <button
           onClick={() => {
             setEditableProfile({ ...profile });
@@ -145,44 +204,7 @@ const Profile = () => {
       </div>
 
       <div style={styles.section}>
-        <div
-          style={styles.toggleRow}
-          onClick={() => setShowRequests(!showRequests)}
-        >
-          <span>Заявки на участие</span>
-          <span style={styles.badge}>{incomingRequests.length}</span>
-        </div>
 
-        {showRequests &&
-          incomingRequests.map((applicant, i) => (
-            <div key={i} style={styles.requestCard}>
-              <div style={styles.profileLine}>
-                <strong>Telegram ID:</strong> {applicant.telegramId}
-              </div>
-              <div style={styles.profileLine}>
-                <strong>Пол:</strong> {applicant.gender}
-              </div>
-              <div style={styles.profileLine}>
-                <strong>Возраст:</strong> {applicant.age}
-              </div>
-              <div style={styles.profileLine}>
-                <strong>Город:</strong> {applicant.city}
-              </div>
-
-              <div style={styles.photoRow}>
-                {applicant.photos.map((url, idx) => (
-                  <div key={idx} style={styles.photoBox}>
-                    <img src={url} alt="Фото" style={styles.photo} />
-                  </div>
-                ))}
-              </div>
-
-              <div style={styles.buttonRow}>
-                <button style={styles.acceptBtn}>Принять</button>
-                <button style={styles.rejectBtn}>Отклонить</button>
-              </div>
-            </div>
-          ))}
       </div>
 
       <div style={styles.section}>
@@ -190,7 +212,7 @@ const Profile = () => {
           style={styles.toggleRow}
           onClick={() => setShowMeetings(!showMeetings)}
         >
-          <span>Мои встречи</span>
+          <span>Созданные встречи 1-1</span>
           <span
             style={{ transform: showMeetings ? 'rotate(90deg)' : 'none' }}
           >
@@ -200,30 +222,98 @@ const Profile = () => {
 
         {showMeetings &&
           myMeetings.map((m) => (
-            <div key={m.id} style={styles.meetingCard}>
+            <div key={m._id} style={styles.meetingCard}>
               <div style={styles.meetingContent}>
                 <div style={styles.meetingText}>
-                  <div style={styles.meetingType}>{m.type}</div>
-                  <div style={styles.meetingInfo}>{m.info}</div>
+                  <div style={styles.meetingType}>💬 Формат: 1-на-1</div>
+                  <div style={styles.meetingInfo}>🕒 {new Date(m.time).toLocaleString()}</div>
+                  <div style={styles.meetingInfo}>📍 {m.location}</div>
+                  <div style={styles.meetingInfo}>
+                    🔍 Ищет: {m.gender === 'male' ? 'Мужчину' : m.gender === 'female' ? 'Женщину' : 'Кого угодно'}
+                  </div>
                 </div>
-                <img
-                  src={m.avatar}
-                  alt="avatar"
-                  style={styles.meetingAvatar}
-                />
+                <button
+                  onClick={async () => {
+                    if (!window.confirm('Удалить встречу?')) return;
+
+                    const res = await fetch('https://dating-in-tg.com/single/delete', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ meetingId: m._id }),
+                    });
+
+                    const data = await res.json();
+                    if (data.status === '✅ Удалено') {
+                      setMyMeetings((prev) => prev.filter((item) => item._id !== m._id));
+                    } else {
+                      alert(data.error || 'Ошибка удаления');
+                    }
+                  }}
+                  style={styles.deleteBtn}
+                >
+                  🗑 Удалить
+                </button>
+
               </div>
+              {m.candidateProfiles?.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Заявки:</div>
+                  {m.candidateProfiles.map((cand) => (
+                    <div key={cand.telegramId} style={styles.requestCard}>
+                      <div style={styles.profileLine}>
+                        <strong>{cand.name || 'Без имени'}</strong> — {cand.age} лет, {cand.city}
+                      </div>
+                      <div style={styles.profileLine}>
+                        Статус:{' '}
+                        <strong>
+                          {{
+                            pending: '⏳ Ожидает',
+                            accepted: '✅ Принят',
+                            rejected: '❌ Отклонён',
+                          }[cand.status] || '❓'}
+                        </strong>
+                      </div>
+                      <div style={styles.photoRow}>
+                        {cand.photos?.map((url, i) => (
+                          <div key={i} style={styles.photoBox}>
+                            <img src={url} alt="Фото" style={styles.photo} />
+                          </div>
+                        ))}
+                      </div>
+                      {cand.status === 'pending' && (
+                        <div style={styles.buttonRow}>
+                          <button
+                            style={styles.acceptBtn}
+                            onClick={() => handleAcceptCandidate(m._id, cand.telegramId)}
+                          >
+                            Принять
+                          </button>
+                          <button
+                            style={styles.rejectBtn}
+                            onClick={() => handleRejectCandidate(m._id, cand.telegramId)}
+                          >
+                            Отклонить
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
+
 
         {showEdit && editableProfile && (
           <div style={modalStyles.backdrop}>
             <div style={modalStyles.modal}>
               <h3 style={modalStyles.title}>Редактировать профиль</h3>
 
-              {['gender', 'age', 'height', 'weight', 'city'].map((field) => (
+              {['name', 'gender', 'age', 'height', 'weight', 'city'].map((field) => (
                 <div key={field} style={modalStyles.inputBlock}>
                   <label style={modalStyles.label}>
                     {{
+                      name: 'Имя',
                       gender: 'Пол',
                       age: 'Возраст',
                       height: 'Рост',
@@ -277,6 +367,147 @@ const Profile = () => {
             </div>
           </div>
         )}
+
+        <div style={styles.section}>
+          <div
+            style={styles.toggleRow}
+            onClick={() => setShowRequests(!showRequests)}
+          >
+            <span>Созданные групповые встречи</span>
+            <span style={{ transform: showRequests ? 'rotate(90deg)' : 'none' }}>▶</span>
+          </div>
+
+          {showRequests &&
+            myGroupMeetings.map((m) => (
+              <div key={m._id} style={styles.meetingCard}>
+                <div style={styles.meetingContent}>
+                  <div style={styles.meetingText}>
+                    <div style={styles.meetingType}>👥 Формат: групповая</div>
+                    <div style={styles.meetingInfo}>🕒 {new Date(m.time).toLocaleString()}</div>
+                    <div style={styles.meetingInfo}>📍 {m.location}</div>
+                    <div style={styles.meetingInfo}>
+                      🔍 Ищет: {m.gender === 'male' ? 'Мужчин' : m.gender === 'female' ? 'Женщин' : 'Кого угодно'}
+                    </div>
+                    <div style={styles.meetingInfo}>👤 Участников: до {m.maxParticipants}</div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm('Удалить встречу?')) return;
+
+                      const res = await fetch('https://dating-in-tg.com/many/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ meetingId: m._id }),
+                      });
+
+                      const data = await res.json();
+                      if (data.status === '✅ Удалено') {
+                        setMyGroupMeetings((prev) => prev.filter((item) => item._id !== m._id));
+                      } else {
+                        alert(data.error || 'Ошибка удаления');
+                      }
+                    }}
+                    style={styles.deleteBtn}
+                  >
+                    🗑 Удалить
+                  </button>
+                </div>
+
+                {m.candidateProfiles?.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Заявки:</div>
+                    {m.candidateProfiles.map((cand) => (
+                      <div key={cand.telegramId} style={styles.requestCard}>
+                        <div style={styles.profileLine}>
+                          <strong>{cand.name || 'Без имени'}</strong> — {cand.age} лет, {cand.city}
+                        </div>
+                        <div style={styles.profileLine}>
+                          Статус:{' '}
+                          <strong>
+                            {{
+                              pending: '⏳ Ожидает',
+                              accepted: '✅ Принят',
+                              rejected: '❌ Отклонён',
+                            }[cand.status] || '❓'}
+                          </strong>
+                        </div>
+                        <div style={styles.photoRow}>
+                          {cand.photos?.map((url, i) => (
+                            <div key={i} style={styles.photoBox}>
+                              <img src={url} alt="Фото" style={styles.photo} />
+                            </div>
+                          ))}
+                        </div>
+                        {cand.status === 'pending' && (
+                          <div style={styles.buttonRow}>
+                            <button
+                              style={styles.acceptBtn}
+                              onClick={async () => {
+                                const res = await fetch('https://dating-in-tg.com/many/accept', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ meetId: m._id, telegramId: cand.telegramId }),
+                                });
+                                const data = await res.json();
+                                if (data.status === '✅ Принят') {
+                                  setMyGroupMeetings((prev) =>
+                                    prev.map((mm) =>
+                                      mm._id === m._id
+                                        ? {
+                                          ...mm,
+                                          candidateProfiles: mm.candidateProfiles.map((c) =>
+                                            c.telegramId === cand.telegramId
+                                              ? { ...c, status: 'accepted' }
+                                              : c
+                                          ),
+                                        }
+                                        : mm
+                                    )
+                                  );
+                                } else alert(data.error || 'Ошибка при принятии');
+                              }}
+                            >
+                              Принять
+                            </button>
+                            <button
+                              style={styles.rejectBtn}
+                              onClick={async () => {
+                                const res = await fetch('https://dating-in-tg.com/many/reject', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ meetId: m._id, telegramId: cand.telegramId }),
+                                });
+                                const data = await res.json();
+                                if (data.status === '✅ Отклонён') {
+                                  setMyGroupMeetings((prev) =>
+                                    prev.map((mm) =>
+                                      mm._id === m._id
+                                        ? {
+                                          ...mm,
+                                          candidateProfiles: mm.candidateProfiles.map((c) =>
+                                            c.telegramId === cand.telegramId
+                                              ? { ...c, status: 'rejected' }
+                                              : c
+                                          ),
+                                        }
+                                        : mm
+                                    )
+                                  );
+                                } else alert(data.error || 'Ошибка при отклонении');
+                              }}
+                            >
+                              Отклонить
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+        </div>
+
 
       </div>
     </div>
@@ -442,6 +673,16 @@ const styles = {
     borderRadius: '50%',
     objectFit: 'cover',
   },
+  deleteBtn: {
+    marginTop: 8,
+    padding: '8px 12px',
+    backgroundColor: '#e53935',
+    color: 'white',
+    border: 'none',
+    borderRadius: 8,
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  }
 };
 
 const modalStyles = {

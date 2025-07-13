@@ -17,22 +17,7 @@ const PersonalMeetings = () => {
   });
   const [statusMessage, setStatusMessage] = useState('');
 
-  const [meetings, setMeetings] = useState([
-    {
-      id: 1,
-      date: 'Сегодня, 18:00',
-      location: 'Кофейня “Мята”',
-      requirements: 'Девушки, 20-30 лет',
-      avatar: 'https://randomuser.me/api/portraits/women/21.jpg',
-    },
-    {
-      id: 2,
-      date: 'Завтра, 12:00',
-      location: 'ЦУМ, вход №2',
-      requirements: 'Парни, 25-35 лет',
-      avatar: 'https://randomuser.me/api/portraits/men/41.jpg',
-    },
-  ]);
+  let defaultavatar = 'https://randomuser.me/api/portraits/women/25.jpg'
 
   const fetchMeetings = async () => {
     try {
@@ -69,16 +54,21 @@ const PersonalMeetings = () => {
           maxWeight: newMeeting.maxWeight,
         }),
       });
+
       const data = await res.json();
-      if (res.ok) {
-        setStatusMessage('✅ Встреча добавлена');
+
+      if (data?.error) {
+        setStatusMessage(data.error);
+      } else if (data?.status) {
+        setStatusMessage(data.status);
         setShowCreateModal(false);
         fetchMeetings();
       } else {
-        setStatusMessage(data || '❌ Ошибка создания');
+        setStatusMessage('❌ Неизвестная ошибка');
       }
     } catch (e) {
-      setStatusMessage('❌ Ошибка сети');
+      const message = typeof e === 'string' ? e : e?.message || JSON.stringify(e);
+      setStatusMessage(`${message}`);
     }
   };
 
@@ -114,27 +104,10 @@ const PersonalMeetings = () => {
 
       <div style={styles.sectionTitle}>Доступные встречи</div>
 
-      {meetings.map((meet) => (
-        <div key={meet.id} style={styles.card}>
-          <div style={styles.cardHeader}>
-            <img src={meet.avatar} alt="avatar" style={styles.avatar} />
-            <div>
-              <div style={styles.whenWhere}><strong>{meet.date}</strong></div>
-              <div style={styles.location}>{meet.location}</div>
-            </div>
-          </div>
-
-          <div style={styles.requirements}>
-            <strong>Кого ищут:</strong> {meet.requirements}
-          </div>
-
-          <button style={styles.joinButton}>Участвовать</button>
-        </div>
-      ))}
-
       {fetchedMeetings.map((meet) => (
         <div key={meet._id} style={styles.card}>
           <div style={styles.cardHeader}>
+            <img src={defaultavatar} alt="avatar" style={styles.avatar} />
             <div>
               <div style={styles.whenWhere}>
                 <strong>{new Date(meet.time).toLocaleString()}</strong>
@@ -147,7 +120,31 @@ const PersonalMeetings = () => {
             {(meet.gender === 'any' ? 'Любой пол' : meet.gender === 'male' ? 'Парни' : 'Девушки') +
               (meet.minAge || meet.maxAge ? `, ${meet.minAge || '?'}–${meet.maxAge || '?'}` : '')}
           </div>
-          <button style={styles.joinButton}>Участвовать</button>
+          <button
+            style={styles.joinButton}
+            onClick={async () => {
+              const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+              if (!telegramId) return alert('❌ Нет Telegram ID');
+
+              try {
+                const res = await fetch('https://dating-in-tg.com/single/apply', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    meetingId: meet._id,
+                    telegramId,
+                  }),
+                });
+
+                const data = await res.json();
+                alert(data?.status || data?.error || '❌ Неизвестная ошибка');
+              } catch (err) {
+                alert('❌ Ошибка сети');
+              }
+            }}
+          >
+            Участвовать
+          </button>
         </div>
       ))}
 
@@ -205,10 +202,13 @@ const PersonalMeetings = () => {
             onChange={(e) => setNewMeeting({ ...newMeeting, maxWeight: e.target.value })}
             style={styles.input}
           />
-          <button onClick={handleCreate} style={styles.joinButton}>Создать</button>
-          <button onClick={() => setShowCreateModal(false)} style={{ ...styles.joinButton, backgroundColor: '#ccc' }}>
-            Отмена
-          </button>
+          <div style={{ display: 'flex', gap: 10, marginTop: 0 }}>
+            <button onClick={handleCreate} style={styles.joinButton}>Создать</button>
+            <button onClick={() => setShowCreateModal(false)} style={{ ...styles.joinButton, backgroundColor: '#ccc' }}>
+              Отмена
+            </button>
+          </div>
+
           <p>{statusMessage}</p>
         </div>
       )}
@@ -307,20 +307,20 @@ const styles = {
   },
   modal: {
     position: 'fixed',
-    top: '10%',
+    top: '3%',
     left: '5%',
     right: '5%',
     backgroundColor: 'white',
-    padding: 20,
+    padding: 10,
     borderRadius: 12,
     boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
     zIndex: 1000,
   },
   input: {
-    width: '100%',
-    padding: 10,
-    fontSize: 14,
-    marginBottom: 10,
+    width: '95%',
+    padding: 8,
+    fontSize: 12,
+    marginBottom: 8,
     borderRadius: 8,
     border: '1px solid #ccc',
   },
