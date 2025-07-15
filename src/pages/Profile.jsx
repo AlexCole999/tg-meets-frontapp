@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 const Profile = () => {
   const [showRequests, setShowRequests] = useState(false);
   const [showMeetings, setShowMeetings] = useState(false);
+  const [showAcceptedMeetings, setShowAcceptedMeetings] = useState(false);
 
   const [myGroupMeetings, setMyGroupMeetings] = useState([]);
 
@@ -41,6 +42,7 @@ const Profile = () => {
   ];
 
   const [myMeetings, setMyMeetings] = useState([]);
+  const [myAcceptedMeetings, setMyAcceptedMeetings] = useState([]);
 
   useEffect(() => {
     const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
@@ -65,7 +67,7 @@ const Profile = () => {
         setStatusMessage(profileData.status === 'добавлен' ? '🆕 Пользователь добавлен' : '📂 Пользователь загружен');
 
         // 2. Загружаем встречи, созданные пользователем
-        const meetingsRes = await fetch('https://dating-in-tg.com/single/mine', {
+        const meetingsRes = await fetch('https://dating-in-tg.com/single/myCreatedMeets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ telegramId }),
@@ -82,6 +84,16 @@ const Profile = () => {
         });
         const groupMeetingsData = await groupMeetingsRes.json();
         setMyGroupMeetings(groupMeetingsData.meetings || []);
+
+        // 4. Загружаем встречи, где пользователь принят
+        const acceptedRes = await fetch('https://dating-in-tg.com/single/myAcceptedMeets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ telegramId }),
+        });
+        const acceptedData = await acceptedRes.json();
+        setMyAcceptedMeetings(acceptedData.meetings || []);
+
       } catch (err) {
         console.error('❌ Ошибка сети:', err);
         setStatusMessage('⚠️ Ошибка сети');
@@ -261,7 +273,7 @@ const Profile = () => {
                   {m.candidateProfiles.map((cand) => (
                     <div key={cand.telegramId} style={styles.requestCard}>
                       <div style={styles.profileLine}>
-                        <strong>{cand.name || 'Без имени'}</strong> — {cand.age} лет, {cand.city}
+                        <strong>{cand.name || 'Без имени'}</strong> — {cand.age} лет, {cand.city}, {cand.gender}
                       </div>
                       <div style={styles.profileLine}>
                         Статус:{' '}
@@ -508,6 +520,39 @@ const Profile = () => {
             ))}
         </div>
 
+        <div style={styles.section}>
+          <div
+            style={styles.toggleRow}
+            onClick={() => setShowAcceptedMeetings(!showAcceptedMeetings)}
+          >
+            <span>Встречи, где вы приняты</span>
+            <span style={{ transform: showAcceptedMeetings ? 'rotate(90deg)' : 'none' }}>▶</span>
+          </div>
+
+          {showAcceptedMeetings &&
+            myAcceptedMeetings.map((m) => (
+              <div key={m._id} style={styles.meetingCard}>
+                <div style={styles.meetingContent}>
+                  <div style={styles.meetingText}>
+                    <div style={styles.meetingType}>💬 Формат: 1-на-1</div>
+                    <div style={styles.meetingInfo}>🕒 {new Date(m.time).toLocaleString()}</div>
+                    <div style={styles.meetingInfo}>📍 {m.location}</div>
+                    <div style={styles.meetingInfo}>
+                      👤 Организатор: <strong>{m.creatorProfile?.name || 'Без имени'}</strong> —{' '}
+                      {m.creatorProfile?.age} лет, {m.creatorProfile?.gender}, {m.creatorProfile?.city}
+                    </div>
+                    <div style={styles.photoRow}>
+                      {m.creatorProfile?.photos?.map((url, i) => (
+                        <div key={i} style={styles.photoBox}>
+                          {url ? <img src={url} alt="Фото" style={styles.photo} /> : <div style={styles.photoPlaceholder}>+</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+        </div>
 
       </div>
     </div>
