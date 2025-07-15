@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 
 const Profile = () => {
+  const [compressedBlob, setCompressedBlob] = useState(null);
+  // const [compressedPreview, setCompressedPreview] = useState(null);
+
+  const [isUploading, setIsUploading] = useState(false);
+
   const [showRequests, setShowRequests] = useState(false);
   const [showMeetings, setShowMeetings] = useState(false);
   const [showAcceptedMeetings, setShowAcceptedMeetings] = useState(false);
@@ -103,6 +108,40 @@ const Profile = () => {
     fetchAll();
   }, []);
 
+  const handleRemovePhoto = async (urlToRemove) => {
+    if (!window.confirm('Удалить это фото?')) return;
+
+    const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    if (!telegramId) {
+      alert('❌ Нет Telegram ID');
+      return;
+    }
+
+    // создаём новый список фоток без удаляемой
+    const newPhotos = (profile?.photos || []).filter(p => p !== urlToRemove);
+
+    try {
+      const res = await fetch('https://dating-in-tg.com/profileEdit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ telegramId, photos: newPhotos }),
+      });
+
+      const data = await res.json();
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      // обновляем состояние профиля
+      setProfile(data.user);
+      alert('✅ Фото удалено!');
+    } catch (err) {
+      console.error('❌ Ошибка сети:', err);
+      alert('❌ Ошибка сети');
+    }
+  };
+
   const handleAcceptCandidate = async (meetId, telegramId) => {
     const res = await fetch('https://dating-in-tg.com/single/accept', {
       method: 'POST',
@@ -170,7 +209,7 @@ const Profile = () => {
           </div>
         )}
         <ProfileLine label="Имя" value={profile?.name ? profile?.name : '-'} />
-        <ProfileLine label="Пол" value={profile?.gender ? profile?.gender : '-'} />
+        <ProfileLine label="Пол" value={profile?.gender == 'male' ? 'Парень' : profile?.gender == 'female' ? 'Девушка' : '-'} />
         <ProfileLine label="Возраст" value={`${profile?.age ? profile?.age : '-'}`} />
         <ProfileLine label="Рост" value={`${profile?.height ? profile?.height : '-'} см`} />
         <ProfileLine label="Вес" value={`${profile?.weight ? profile?.weight : '-'} кг`} />
@@ -204,7 +243,7 @@ const Profile = () => {
         <div style={styles.subheading}>Фото</div>
         <div style={styles.photoRow}>
           {profile?.photos?.map((photo, i) => (
-            <div key={i} style={styles.photoBox}>
+            <div key={i} style={styles.photoBox} onClick={() => handleRemovePhoto(photo)}>
               {photo ? (
                 <img src={photo} alt={`Фото ${i + 1}`} style={styles.photo} />
               ) : (
@@ -212,7 +251,159 @@ const Profile = () => {
               )}
             </div>
           ))}
+
+          {/* Кнопка добавления фото */}
+          <div style={styles.photoBox}>
+            <button
+              onClick={() => document.getElementById('photoUploadInput').click()}
+              style={{
+                width: '100%',
+                height: '100%',
+                border: '1px dashed #aaa',
+                borderRadius: 8,
+                fontSize: 24,
+                background: 'transparent',
+                cursor: isUploading ? 'default' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              disabled={isUploading}
+            >
+              {isUploading ? (
+                <div
+                  style={{
+                    width: 24,
+                    height: 24,
+                    border: '3px solid #ccc',
+                    borderTop: '3px solid #1976d2',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }}
+                />
+              ) : (
+                '+'
+              )}
+            </button>
+
+            <input
+              id="photoUploadInput"
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+
+                // ✨ 1. проверяем сколько уже фото у юзера
+                const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+                if (!telegramId) {
+                  alert('❌ Не найден Telegram ID');
+                  return;
+                }
+
+                try {
+                  const profileRes = await fetch('https://dating-in-tg.com/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegramId }),
+                  });
+                  const profileData = await profileRes.json();
+
+                  const currentPhotos = (profileData.user?.photos || []).filter(p => !!p);
+                  if (currentPhotos.length >= 3) {
+                    alert('❌ Нельзя добавить больше 3 фото');
+                    return; // 👉 стопаем, дальше не идём
+                  }
+                } catch (err) {
+                  console.error('❌ Ошибка проверки фото:', err);
+                  alert('❌ Ошибка проверки профиля');
+                  return;
+                }
+
+                // ✨ 2. Если проверка пройдена, продолжаем сжатием
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                  const img = new Image();
+                  img.onload = async () => {
+                    const canvas = document.createElement('canvas');
+                    const maxWidth = 800;
+                    const scale = Math.min(maxWidth / img.width, 1);
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
+
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                    canvas.toBlob(async (blob) => {
+                      if (!blob) {
+                        alert('❌ Не удалось сжать изображение');
+                        return;
+                      }
+
+                      try {
+                        setIsUploading(true);
+                        const formData = new FormData();
+                        formData.append('photo', blob, 'compressed.jpg');
+
+                        const res = await fetch('https://dating-in-tg.com/uploadPhoto', {
+                          method: 'POST',
+                          body: formData,
+                        });
+                        const data = await res.json();
+
+                        if (data.error) {
+                          alert(data.error);
+                          setIsUploading(false);
+                          return;
+                        }
+
+                        if (data.url) {
+                          console.log('✅ Загружено в S3:', data.url);
+
+                          // Обновляем профиль
+                          const newPhotos = [...(profile?.photos || [])];
+                          const firstEmptyIndex = newPhotos.findIndex(p => !p);
+                          if (firstEmptyIndex >= 0) {
+                            newPhotos[firstEmptyIndex] = data.url;
+                          } else {
+                            newPhotos.push(data.url);
+                          }
+
+                          const saveRes = await fetch('https://dating-in-tg.com/profileEdit', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ telegramId, photos: newPhotos }),
+                          });
+                          const saveData = await saveRes.json();
+
+                          if (saveData.error) {
+                            alert(saveData.error);
+                            setIsUploading(false);
+                            return;
+                          }
+
+                          setProfile(saveData.user);
+                          alert(saveData.status || '✅ Фото добавлено!');
+                        }
+                      } catch (err) {
+                        console.error('❌ Ошибка сети:', err);
+                        alert('❌ Ошибка сети');
+                      } finally {
+                        setIsUploading(false);
+                      }
+                    }, 'image/jpeg', 0.5);
+                  };
+                  img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+              }}
+            />
+
+          </div>
+
         </div>
+
       </div>
 
       <div style={styles.section}>
@@ -316,7 +507,7 @@ const Profile = () => {
           ))}
 
 
-        {showEdit && editableProfile && (
+        {/* {showEdit && editableProfile && (
           <div style={modalStyles.backdrop}>
             <div style={modalStyles.modal}>
               <h3 style={modalStyles.title}>Редактировать профиль</h3>
@@ -378,7 +569,144 @@ const Profile = () => {
               </div>
             </div>
           </div>
+        )} */}
+        {showEdit && editableProfile && (
+          <div style={modalStyles.backdrop}>
+            <div style={modalStyles.modal}>
+              <h3 style={modalStyles.title}>Редактировать профиль</h3>
+
+              {/* Имя */}
+              <div style={modalStyles.inputBlock}>
+                <label style={modalStyles.label}>Имя</label>
+                <input
+                  type="text"
+                  value={editableProfile.name || ''}
+                  onChange={(e) =>
+                    setEditableProfile((prev) => ({ ...prev, name: e.target.value }))
+                  }
+                  style={modalStyles.input}
+                />
+              </div>
+
+              {/* Пол */}
+              <div style={modalStyles.inputBlock}>
+                <label style={modalStyles.label}>Пол</label>
+                <select
+                  value={editableProfile.gender || ''}
+                  onChange={(e) =>
+                    setEditableProfile((prev) => ({ ...prev, gender: e.target.value }))
+                  }
+                  style={modalStyles.input}
+                >
+                  <option value="">Выберите пол</option>
+                  <option value="male">Парень</option>
+                  <option value="female">Девушка</option>
+                </select>
+              </div>
+
+              {/* Возраст */}
+              <div style={modalStyles.inputBlock}>
+                <label style={modalStyles.label}>
+                  Возраст: {editableProfile.age || 18} лет
+                </label>
+                <input
+                  type="range"
+                  min="18"
+                  max="99"
+                  value={editableProfile.age || 18}
+                  onChange={(e) =>
+                    setEditableProfile((prev) => ({ ...prev, age: Number(e.target.value) }))
+                  }
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              {/* Рост */}
+              <div style={modalStyles.inputBlock}>
+                <label style={modalStyles.label}>
+                  Рост: {editableProfile.height || 170} см
+                </label>
+                <input
+                  type="range"
+                  min="120"
+                  max="220"
+                  value={editableProfile.height || 170}
+                  onChange={(e) =>
+                    setEditableProfile((prev) => ({ ...prev, height: Number(e.target.value) }))
+                  }
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              {/* Вес */}
+              <div style={modalStyles.inputBlock}>
+                <label style={modalStyles.label}>
+                  Вес: {editableProfile.weight || 60} кг
+                </label>
+                <input
+                  type="range"
+                  min="30"
+                  max="200"
+                  value={editableProfile.weight || 60}
+                  onChange={(e) =>
+                    setEditableProfile((prev) => ({ ...prev, weight: Number(e.target.value) }))
+                  }
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              {/* Город */}
+              <div style={modalStyles.inputBlock}>
+                <label style={modalStyles.label}>Город</label>
+                <select
+                  value={editableProfile.city || ''}
+                  onChange={(e) =>
+                    setEditableProfile((prev) => ({ ...prev, city: e.target.value }))
+                  }
+                  style={modalStyles.input}
+                >
+                  <option value="">Выберите город</option>
+                  <option value="Ташкент">Ташкент</option>
+                  {/* 👉 здесь потом можно добавить другие города */}
+                </select>
+              </div>
+
+              <div style={modalStyles.buttonRow}>
+                <button
+                  onClick={() => setShowEdit(false)}
+                  style={modalStyles.cancelBtn}
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={async () => {
+                    const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+                    if (!telegramId) return;
+
+                    const res = await fetch('https://dating-in-tg.com/profileEdit', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ telegramId, ...editableProfile }),
+                    });
+
+                    if (res.ok) {
+                      const data = await res.json();
+                      setStatusMessage('✅ Профиль обновлён');
+                      setShowEdit(false);
+                      setProfile(data.user);
+                    } else {
+                      setStatusMessage('❌ Ошибка при обновлении');
+                    }
+                  }}
+                  style={modalStyles.saveBtn}
+                >
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          </div>
         )}
+
 
         <div style={styles.section}>
           <div

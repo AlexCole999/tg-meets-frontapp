@@ -2,8 +2,11 @@ import { useState, useEffect } from 'react';
 
 const PersonalMeetings = () => {
   const [fetchedMeetings, setFetchedMeetings] = useState([]);
-  const [genderFilter, setGenderFilter] = useState('');
-  const [ageFilter, setAgeFilter] = useState('');
+
+  const [genderFilter, setGenderFilter] = useState('any');
+  const [minAgeFilter, setMinAgeFilter] = useState(null);
+  const [maxAgeFilter, setMaxAgeFilter] = useState(null);
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newMeeting, setNewMeeting] = useState({
     location: '',
@@ -17,11 +20,17 @@ const PersonalMeetings = () => {
   });
   const [statusMessage, setStatusMessage] = useState('');
 
-  let defaultavatar = 'https://randomuser.me/api/portraits/women/25.jpg'
+  let defaultavatar = 'https://randomuser.me/api/portraits/lego/2.jpg'
 
   const fetchMeetings = async () => {
     try {
-      const res = await fetch('https://dating-in-tg.com/single/all');
+      const params = new URLSearchParams();
+
+      if (genderFilter) params.append('gender', genderFilter);
+      if (minAgeFilter) params.append('minAge', minAgeFilter);
+      if (maxAgeFilter) params.append('maxAge', maxAgeFilter);
+
+      const res = await fetch(`https://dating-in-tg.com/single/all?${params.toString()}`);
       const data = await res.json();
       setFetchedMeetings(data);
     } catch (err) {
@@ -30,8 +39,9 @@ const PersonalMeetings = () => {
   };
 
   useEffect(() => {
+
     fetchMeetings();
-  }, []);
+  }, [genderFilter, minAgeFilter, maxAgeFilter]);
 
   const handleCreate = async () => {
     const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
@@ -80,83 +90,127 @@ const PersonalMeetings = () => {
         + Создать встречу
       </button>
 
-      <div style={styles.filters}>
+      <div style={{ textAlign: 'center', fontStyle: 'italic', fontSize: '12px', marginBottom: '6px' }}>Искать встречи, где люди ищут:</div>
+
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        {/* Пол */}
         <select
           value={genderFilter}
           onChange={(e) => setGenderFilter(e.target.value)}
-          style={styles.select}
+          style={{
+            flex: '1',
+            padding: '6px 8px',
+            fontSize: 14,
+            borderRadius: 6,
+            border: '1px solid #ccc',
+            background: '#fff',
+            maxWidth: 120,
+          }}
         >
           <option value="">Пол</option>
           <option value="male">Парни</option>
           <option value="female">Девушки</option>
         </select>
-        <select
-          value={ageFilter}
-          onChange={(e) => setAgeFilter(e.target.value)}
-          style={styles.select}
-        >
-          <option value="">Возраст</option>
-          <option value="18-25">18–25</option>
-          <option value="26-35">26–35</option>
-          <option value="36-45">36–45</option>
-        </select>
+
+        {/* Мин возраст*/}
+        <input
+          type="number"
+          placeholder="Мин. возраст"
+          value={maxAgeFilter}
+          onChange={(e) => setMaxAgeFilter(e.target.value)}
+          style={{
+            width: 90,
+            padding: '6px 8px',
+            fontSize: 14,
+            borderRadius: 6,
+            border: '1px solid #ccc',
+          }}
+          min={18}
+          max={99}
+        />
+
+        {/* Макс возраст */}
+        <input
+          type="number"
+          placeholder="Макс. возраст"
+          value={minAgeFilter}
+          onChange={(e) => setMinAgeFilter(e.target.value)}
+          style={{
+            width: 90,
+            padding: '6px 8px',
+            fontSize: 14,
+            borderRadius: 6,
+            border: '1px solid #ccc',
+          }}
+          min={18}
+          max={99}
+        />
       </div>
 
       <div style={styles.sectionTitle}>Доступные встречи</div>
 
-      {fetchedMeetings.map((meet) => (
-        <div key={meet._id} style={styles.card}>
-          <div style={styles.cardHeader}>
-            <img src={defaultavatar} alt="avatar" style={styles.avatar} />
-            <div>
-              <div style={styles.whenWhere}>
-                <strong>{new Date(meet.time).toLocaleString()}</strong>
+      {fetchedMeetings.map((meet) => {
+        const creatorPhoto =
+          meet.creatorProfile?.photos?.find((p) => !!p) || defaultavatar;
+        return (
+          <div key={meet._id} style={styles.card}>
+            <div style={styles.cardHeader}>
+              <img src={creatorPhoto} alt="avatar" style={styles.avatar} />
+              <div>
+                <div style={styles.whenWhere}>
+                  <strong>{new Date(meet.time).toLocaleString()}</strong>
+                </div>
+                <div style={styles.location}>{meet.location}</div>
               </div>
-              <div style={styles.location}>{meet.location}</div>
             </div>
-          </div>
-          <div style={styles.requirements}>
-            <strong>Кого ищут:</strong>{' '}
-            {(meet.gender === 'any' ? 'Любой пол' : meet.gender === 'male' ? 'Парни' : 'Девушки') +
-              (meet.minAge || meet.maxAge ? `, ${meet.minAge || '?'}–${meet.maxAge || '?'}` : '')}
-          </div>
-          <button
-            style={styles.joinButton}
-            onClick={async () => {
-              const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-              if (!telegramId) return alert('❌ Нет Telegram ID');
+            <div style={styles.requirements}>
+              <strong>Кого ищут:</strong>{' '}
+              {(meet.gender === 'any' ? 'Любой пол' : meet.gender === 'male' ? 'Парни' : 'Девушки') +
+                (meet.minAge || meet.maxAge ? `, ${meet.minAge || '?'}–${meet.maxAge || '?'}` : '')}
+            </div>
+            <button
+              style={styles.joinButton}
+              onClick={async () => {
+                const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+                if (!telegramId) return alert('❌ Нет Telegram ID');
 
-              try {
-                const res = await fetch('https://dating-in-tg.com/single/apply', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    meetingId: meet._id,
-                    telegramId,
-                  }),
-                });
+                try {
+                  const res = await fetch('https://dating-in-tg.com/single/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      meetingId: meet._id,
+                      telegramId,
+                    }),
+                  });
 
-                const data = await res.json();
-                alert(data?.status || data?.error || '❌ Неизвестная ошибка');
-              } catch (err) {
-                alert('❌ Ошибка сети');
-              }
-            }}
-          >
-            Участвовать
-          </button>
-        </div>
-      ))}
+                  const data = await res.json();
+                  alert(data?.status || data?.error || '❌ Неизвестная ошибка');
+                } catch (err) {
+                  alert('❌ Ошибка сети');
+                }
+              }}
+            >
+              Участвовать
+            </button>
+          </div>
+        )
+      }
+      )
+      }
 
       {showCreateModal && (
         <div style={styles.modal}>
           <h3>Создать встречу</h3>
+          <div style={{ textAlign: 'center', fontStyle: 'italic', fontSize: '12px', marginBottom: '6px' }}>Дата встречи</div>
           <input
             type="date"
             value={newMeeting.date}
             onChange={(e) => setNewMeeting({ ...newMeeting, date: e.target.value })}
             style={styles.input}
           />
+          <div style={{ textAlign: 'center', fontStyle: 'italic', fontSize: '12px', marginBottom: '6px' }}>Время встречи</div>
           <input
             type="time"
             value={newMeeting.time}
@@ -164,11 +218,12 @@ const PersonalMeetings = () => {
             style={styles.input}
           />
           <input
-            placeholder="Локация"
+            placeholder="Место встречи"
             value={newMeeting.location}
             onChange={(e) => setNewMeeting({ ...newMeeting, location: e.target.value })}
             style={styles.input}
           />
+          <div style={{ textAlign: 'center', fontStyle: 'italic', fontSize: '12px', marginTop: '12px', marginBottom: '6px' }}>Кто может откликаться на встречу</div>
           <select
             value={newMeeting.gender}
             onChange={(e) => setNewMeeting({ ...newMeeting, gender: e.target.value })}
@@ -178,30 +233,67 @@ const PersonalMeetings = () => {
             <option value="male">Парни</option>
             <option value="female">Девушки</option>
           </select>
+
+          {/* 🎚️ Ползунок минимального возраста */}
+          <label style={{ fontSize: 14, marginTop: 10, display: 'block' }}>
+            Мин. возраст: {newMeeting.minAge || 18}
+          </label>
           <input
-            placeholder="Мин. возраст"
-            value={newMeeting.minAge}
-            onChange={(e) => setNewMeeting({ ...newMeeting, minAge: e.target.value })}
-            style={styles.input}
+            type="range"
+            min="18"
+            max="80"
+            value={newMeeting.minAge || 18}
+            onChange={(e) =>
+              setNewMeeting({ ...newMeeting, minAge: e.target.value })
+            }
+            style={{ width: '95%', marginBottom: 8 }}
           />
+
+          {/* 🎚️ Ползунок максимального возраста */}
+          <label style={{ fontSize: 14, marginTop: 10, display: 'block' }}>
+            Макс. возраст: {newMeeting.maxAge || 80}
+          </label>
           <input
-            placeholder="Макс. возраст"
-            value={newMeeting.maxAge}
-            onChange={(e) => setNewMeeting({ ...newMeeting, maxAge: e.target.value })}
-            style={styles.input}
+            type="range"
+            min="18"
+            max="80"
+            value={newMeeting.maxAge || 80}
+            onChange={(e) =>
+              setNewMeeting({ ...newMeeting, maxAge: e.target.value })
+            }
+            style={{ width: '95%', marginBottom: 8 }}
           />
+
+          {/* 🎚️ Ползунок минимального веса */}
+          {/* <label style={{ fontSize: 14, marginTop: 10, display: 'block' }}>
+            Мин. вес (кг): {newMeeting.minWeight || 40}
+          </label>
           <input
-            placeholder="Мин. вес"
-            value={newMeeting.minWeight}
-            onChange={(e) => setNewMeeting({ ...newMeeting, minWeight: e.target.value })}
-            style={styles.input}
-          />
+            type="range"
+            min="40"
+            max="150"
+            value={newMeeting.minWeight || 40}
+            onChange={(e) =>
+              setNewMeeting({ ...newMeeting, minWeight: e.target.value })
+            }
+            style={{ width: '95%', marginBottom: 8 }}
+          /> */}
+
+          {/* 🎚️ Ползунок максимального веса */}
+          {/* <label style={{ fontSize: 14, marginTop: 10, display: 'block' }}>
+            Макс. вес (кг): {newMeeting.maxWeight || 150}
+          </label>
           <input
-            placeholder="Макс. вес"
-            value={newMeeting.maxWeight}
-            onChange={(e) => setNewMeeting({ ...newMeeting, maxWeight: e.target.value })}
-            style={styles.input}
-          />
+            type="range"
+            min="40"
+            max="150"
+            value={newMeeting.maxWeight || 150}
+            onChange={(e) =>
+              setNewMeeting({ ...newMeeting, maxWeight: e.target.value })
+            }
+            style={{ width: '95%', marginBottom: 8 }}
+          /> */}
+
           <div style={{ display: 'flex', gap: 10, marginTop: 0 }}>
             <button onClick={handleCreate} style={styles.joinButton}>Создать</button>
             <button onClick={() => setShowCreateModal(false)} style={{ ...styles.joinButton, backgroundColor: '#ccc' }}>
